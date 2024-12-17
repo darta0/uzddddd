@@ -1,306 +1,287 @@
 using System;
 using Microsoft.Data.Sqlite;
 
-class Program
+class TeslaRentalApp
 {
     public static void Main()
     {
-        string connectionString = "Data Source=tesla.db";
-    
-        try 
+        var dbConnection = "Data Source=tesla.db";
+        
+        try
         {
-            Console.WriteLine("Welcome to the application of renting Tesla cars!");
-            var teslaCtrl = new TeslaCtrl(connectionString);
-            teslaCtrl.AddTesla("Model 3", "12.35", "0.30");
-            teslaCtrl.AddTesla("Model Y", "25.19", "0.50");
-            teslaCtrl.AddTesla("Model S", "17.81", "0.40");
+            Console.WriteLine("Welcome to the Tesla rental service!");
+            var rentalManager = new RentalManager(dbConnection);
+            rentalManager.AddTesla("Model 3", "12.35", "0.30");
+            rentalManager.AddTesla("Model Y", "25.19", "0.50");
+            rentalManager.AddTesla("Model S", "17.81", "0.40");
             
             while (true)
             {
-                Console.WriteLine("Choose an action:\n'register' - register yourself,\n'start' - start a ride,\n'stop' - stop the ride,\n'print' - show all available Teslas,\n'exit' - close the program.");
-                var userCommand = Console.ReadLine();
+                Console.WriteLine("Select an option: 'register' - sign up, 'start' - start a ride, 'stop' - end the ride, 'list' - show available Teslas, 'exit' - close the app.");
+                var action = Console.ReadLine();
                 
-                switch (userCommand)
+                switch (action)
                 {
                     case "register":
-                        teslaCtrl.AddClient();
+                        rentalManager.RegisterClient();
                         break;
                     case "start":
-                        teslaCtrl.StartRent();
+                        rentalManager.BeginRental();
                         break;
                     case "stop":
-                        teslaCtrl.StopRent();
+                        rentalManager.EndRental();
                         break;
-                    case "print":
-                        teslaCtrl.PrintTeslas();
+                    case "list":
+                        rentalManager.ShowTeslas();
                         break;
                     case "exit":
                         return;
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception e)
         {
-            Console.WriteLine("An error occurred: " + ex.Message);    
+            Console.WriteLine("Error: " + e.Message);    
         }
     }
     
-    public class TeslaCtrl
+    public class RentalManager
     {
-        private readonly string connectionString;
-        private int clientId;
-        private int currentRentId;
+        private readonly string _connectionString;
+        private int _currentClientId;
+        private int _activeRentId;
         
-        public TeslaCtrl(string connectionString)
+        public RentalManager(string connectionString)
         {
-            this.connectionString = connectionString;
-            CreateTeslaTable();
-            CreateClientTable();
-            CreateRentTable();
+            _connectionString = connectionString;
+            SetupDatabaseTables();
         }
         
-        private void CreateTeslaTable()
+        private void SetupDatabaseTables()
         {
-            using (var connection = new SqliteConnection(connectionString))
+            using (var connection = new SqliteConnection(_connectionString))
             {
                 connection.Open();
                 
-                var createTableCmd = connection.CreateCommand();
-                createTableCmd.CommandText = 
-                    @"CREATE TABLE IF NOT EXISTS Teslas (
+                string[] createTableCommands = new string[]
+                {
+                    @"CREATE TABLE IF NOT EXISTS Cars (
                         ID INTEGER PRIMARY KEY AUTOINCREMENT,
                         Model TEXT NOT NULL,
                         HourlyRate REAL NOT NULL,
                         KilometerRate REAL NOT NULL
-                        );";
-                createTableCmd.ExecuteNonQuery();
-            }
-        }
-        
-        private void CreateClientTable()
-        {
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                connection.Open();
-                
-                var createTableCmd = connection.CreateCommand();
-                createTableCmd.CommandText = 
-                    @"CREATE TABLE IF NOT EXISTS Clients (
+                    );",
+                    @"CREATE TABLE IF NOT EXISTS Customers (
                         ID INTEGER PRIMARY KEY AUTOINCREMENT,
                         Name TEXT NOT NULL,
                         Surname TEXT NOT NULL,
                         Email TEXT NOT NULL
-                        );";
-                createTableCmd.ExecuteNonQuery();
-            }
-        }
-
-        private void CreateRentTable()
-        {
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                connection.Open();
-                
-                var createTableCmd = connection.CreateCommand();
-                createTableCmd.CommandText = 
-                    @"CREATE TABLE IF NOT EXISTS Rents (
+                    );",
+                    @"CREATE TABLE IF NOT EXISTS Rentals (
                         ID INTEGER PRIMARY KEY AUTOINCREMENT,
-                        StartDate DATETIME NOT NULL,
-                        FinishDate DATETIME,
+                        StartTime DATETIME NOT NULL,
+                        EndTime DATETIME,
                         DurationMinutes INTEGER,
-                        Kilometers REAL,
-                        Price REAL,
+                        Distance REAL,
+                        Cost REAL,
                         CarID INTEGER NOT NULL,
-                        ClientID INTEGER NOT NULL,
-                        FOREIGN KEY (CarID) REFERENCES Teslas(ID),
-                        FOREIGN KEY (ClientID) REFERENCES Clients(ID)
-                        );";
-                createTableCmd.ExecuteNonQuery();
+                        CustomerID INTEGER NOT NULL,
+                        FOREIGN KEY (CarID) REFERENCES Cars(ID),
+                        FOREIGN KEY (CustomerID) REFERENCES Customers(ID)
+                    );"
+                };
+                
+                foreach (var command in createTableCommands)
+                {
+                    var cmd = connection.CreateCommand();
+                    cmd.CommandText = command;
+                    cmd.ExecuteNonQuery();
+                }
             }
         }
         
-        public void AddClient()
+        public void RegisterClient()
         {
-            Console.WriteLine("Please, enter your name:");
-            string clientName = Console.ReadLine();
+            Console.WriteLine("Enter your first name:");
+            var firstName = Console.ReadLine();
             
-            Console.WriteLine("Please, enter your surname:");
-            string clientSurname = Console.ReadLine();
+            Console.WriteLine("Enter your last name:");
+            var lastName = Console.ReadLine();
             
-            Console.WriteLine("Please, enter your e-mail:");
-            string clientMail = Console.ReadLine();
+            Console.WriteLine("Enter your email address:");
+            var email = Console.ReadLine();
             
-            if (string.IsNullOrEmpty(clientName) || string.IsNullOrEmpty(clientSurname) || string.IsNullOrEmpty(clientMail))
+            if (string.IsNullOrEmpty(firstName) || string.IsNullOrEmpty(lastName) || string.IsNullOrEmpty(email))
             {
-                Console.WriteLine("All fields are required.");
+                Console.WriteLine("All fields are mandatory.");
                 return;
             }
             
-            AddClientToTable(clientName, clientSurname, clientMail);
+            AddClientToDatabase(firstName, lastName, email);
         }
 
-        private void AddClientToTable(string name, string surname, string mail)
+        private void AddClientToDatabase(string name, string surname, string email)
         {
-            using (var connection = new SqliteConnection(connectionString))
+            using (var connection = new SqliteConnection(_connectionString))
             {
                 connection.Open();
             
                 var insertCmd = connection.CreateCommand();
-                insertCmd.CommandText = "INSERT INTO Clients(Name, Surname, Email) VALUES (@name, @surname, @mail)";
+                insertCmd.CommandText = "INSERT INTO Customers(Name, Surname, Email) VALUES (@name, @surname, @email)";
                 insertCmd.Parameters.AddWithValue("@name", name);
                 insertCmd.Parameters.AddWithValue("@surname", surname);
-                insertCmd.Parameters.AddWithValue("@mail", mail);
+                insertCmd.Parameters.AddWithValue("@email", email);
 
                 insertCmd.ExecuteNonQuery();
                 
                 var getIdCmd = connection.CreateCommand();
                 getIdCmd.CommandText = "SELECT last_insert_rowid()";
-                clientId = Convert.ToInt32(getIdCmd.ExecuteScalar());
+                _currentClientId = Convert.ToInt32(getIdCmd.ExecuteScalar());
             }
         }
 
-        public void AddTesla(string model, string hourlyrate, string kilometerrate)
+        public void AddTesla(string model, string hourlyRate, string kilometerRate)
         {
-            AddTeslaToTable(model, hourlyrate, kilometerrate);
+            InsertTeslaIntoDatabase(model, hourlyRate, kilometerRate);
         }
         
-        private void AddTeslaToTable(string model, string hourlyrate, string kilometerrate)
+        private void InsertTeslaIntoDatabase(string model, string hourlyRate, string kilometerRate)
         {
-            using (var connection = new SqliteConnection(connectionString))
+            using (var connection = new SqliteConnection(_connectionString))
             {
                 connection.Open();
             
                 var insertCmd = connection.CreateCommand();
-                insertCmd.CommandText = "INSERT INTO Teslas(Model, HourlyRate, KilometerRate) VALUES (@model, @hourlyrate, @kilometerrate)";
+                insertCmd.CommandText = "INSERT INTO Cars(Model, HourlyRate, KilometerRate) VALUES (@model, @hourlyRate, @kilometerRate)";
                 insertCmd.Parameters.AddWithValue("@model", model);
-                insertCmd.Parameters.AddWithValue("@hourlyrate", hourlyrate);
-                insertCmd.Parameters.AddWithValue("@kilometerrate", kilometerrate);
+                insertCmd.Parameters.AddWithValue("@hourlyRate", hourlyRate);
+                insertCmd.Parameters.AddWithValue("@kilometerRate", kilometerRate);
 
                 insertCmd.ExecuteNonQuery();
             } 
         }
 
-        public void StartRent()
+        public void BeginRental()
         {
-            Console.WriteLine("Choose a car from the available options below:");
-            PrintTeslas();  
+            Console.WriteLine("Available Teslas: ");
+            ShowTeslas();  
             
-            Console.WriteLine("Enter the ID of the car you are selecting:");
-            int carId = Convert.ToInt32(Console.ReadLine());
-            AddRentToTable(carId, clientId);
+            Console.WriteLine("Select a car by entering its ID:");
+            int selectedCarId = Convert.ToInt32(Console.ReadLine());
+            StartRentalSession(selectedCarId, _currentClientId);
         }
 
-        private void AddRentToTable(int carId, int clientId)
+        private void StartRentalSession(int carId, int clientId)
         {
-            using (var connection = new SqliteConnection(connectionString))
+            using (var connection = new SqliteConnection(_connectionString))
             {
                 connection.Open();
             
                 var insertCmd = connection.CreateCommand();
-                insertCmd.CommandText = "INSERT INTO Rents(StartDate, CarID, ClientID) VALUES (@startdate, @carid, @clientid)";
-                insertCmd.Parameters.AddWithValue("@startdate", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-                insertCmd.Parameters.AddWithValue("@carid", carId);
-                insertCmd.Parameters.AddWithValue("@clientid", clientId);
+                insertCmd.CommandText = "INSERT INTO Rentals(StartTime, CarID, CustomerID) VALUES (@startTime, @carId, @customerId)";
+                insertCmd.Parameters.AddWithValue("@startTime", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                insertCmd.Parameters.AddWithValue("@carId", carId);
+                insertCmd.Parameters.AddWithValue("@customerId", clientId);
 
                 insertCmd.ExecuteNonQuery();
-                Console.WriteLine("Rent started.");
-                Console.WriteLine($"Start Date: {DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")}");
+                Console.WriteLine("Rental started.");
+                Console.WriteLine($"Start Time: {DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")}");
                 
                 var selectCmd = connection.CreateCommand();
                 selectCmd.CommandText = "SELECT last_insert_rowid()";
-                currentRentId = Convert.ToInt32(selectCmd.ExecuteScalar());
+                _activeRentId = Convert.ToInt32(selectCmd.ExecuteScalar());
             } 
         }
         
-        public void StopRent()
+        public void EndRental()
         {
-            using (var connection = new SqliteConnection(connectionString))
+            using (var connection = new SqliteConnection(_connectionString))
             {
                 connection.Open();
         
                 var selectCmd = connection.CreateCommand();
-                selectCmd.CommandText = "SELECT * FROM Rents WHERE ID = @rentId";
-                selectCmd.Parameters.AddWithValue("@rentId", currentRentId);
+                selectCmd.CommandText = "SELECT * FROM Rentals WHERE ID = @rentId";
+                selectCmd.Parameters.AddWithValue("@rentId", _activeRentId);
         
-                Console.WriteLine("Enter the kilometers driven during the rent:");
+                Console.WriteLine("Enter the kilometers traveled:");
                 double kilometersDriven = Convert.ToDouble(Console.ReadLine());
                 
-                DateTime finishDate = DateTime.Now;
+                DateTime rentalEndTime = DateTime.Now;
                 
-                double durationInMinutes;
-                double price = CalculateRentPrice(currentRentId, kilometersDriven, finishDate, out durationInMinutes);
+                double rentalDuration;
+                double rentalCost = CalculateRentalCost(_activeRentId, kilometersDriven, rentalEndTime, out rentalDuration);
                 
-                UpdateRent(currentRentId, finishDate, kilometersDriven, price, durationInMinutes);
+                UpdateRentalSession(_activeRentId, rentalEndTime, kilometersDriven, rentalCost, rentalDuration);
             }
         }
         
-        private double CalculateRentPrice(int rentId, double kilometersDriven, DateTime finishDate, out double durationInMinutes)
+        private double CalculateRentalCost(int rentId, double kilometersDriven, DateTime rentalEndTime, out double rentalDuration)
         {
-            double price = 0;
-            durationInMinutes = 0;
+            double cost = 0;
+            rentalDuration = 0;
 
-            using (var connection = new SqliteConnection(connectionString))
+            using (var connection = new SqliteConnection(_connectionString))
             {
                 connection.Open();
 
                 var selectCmd = connection.CreateCommand();
-                selectCmd.CommandText = "SELECT Rents.StartDate, Teslas.HourlyRate, Teslas.KilometerRate FROM Rents " +
-                                        "JOIN Teslas ON Rents.CarID = Teslas.ID WHERE Rents.ID = @rentId";
+                selectCmd.CommandText = "SELECT Rentals.StartTime, Cars.HourlyRate, Cars.KilometerRate FROM Rentals " +
+                                        "JOIN Cars ON Rentals.CarID = Cars.ID WHERE Rentals.ID = @rentId";
                 selectCmd.Parameters.AddWithValue("@rentId", rentId);
 
                 using (var reader = selectCmd.ExecuteReader())
                 {
                     if (reader.Read())
                     {
-                        DateTime startDate = Convert.ToDateTime(reader["StartDate"]);
+                        DateTime rentalStartTime = Convert.ToDateTime(reader["StartTime"]);
                         double hourlyRate = Convert.ToDouble(reader["HourlyRate"]);
                         double kilometerRate = Convert.ToDouble(reader["KilometerRate"]);
 
-                        durationInMinutes = Math.Round((finishDate - startDate).TotalMinutes, 2);
+                        rentalDuration = Math.Round((rentalEndTime - rentalStartTime).TotalMinutes, 2);
 
-                        price = (durationInMinutes / 60) * hourlyRate + kilometersDriven * kilometerRate;
-                        price = Math.Round(price, 2);
+                        cost = (rentalDuration / 60) * hourlyRate + kilometersDriven * kilometerRate;
+                        cost = Math.Round(cost, 2);
                     }
                 }
             }
             
-            return price;
+            return cost;
         }
         
-        private void UpdateRent(int rentId, DateTime finishDate, double kilometersDriven, double price, double durationInMinutes)
+        private void UpdateRentalSession(int rentId, DateTime rentalEndTime, double kilometersDriven, double cost, double rentalDuration)
         {
-            using (var connection = new SqliteConnection(connectionString))
+            using (var connection = new SqliteConnection(_connectionString))
             {
                 connection.Open();
 
                 var updateCmd = connection.CreateCommand();
-                updateCmd.CommandText = "UPDATE Rents SET FinishDate = @finishDate, Kilometers = @kilometers, Price = @price, DurationMinutes = @duration " +
+                updateCmd.CommandText = "UPDATE Rentals SET EndTime = @endTime, Distance = @distance, Cost = @cost, DurationMinutes = @duration " +
                                         "WHERE ID = @rentId";
-                updateCmd.Parameters.AddWithValue("@finishDate", finishDate.ToString("yyyy-MM-dd HH:mm:ss"));
-                updateCmd.Parameters.AddWithValue("@kilometers", kilometersDriven);
-                updateCmd.Parameters.AddWithValue("@price", price);
-                updateCmd.Parameters.AddWithValue("@duration", durationInMinutes);
+                updateCmd.Parameters.AddWithValue("@endTime", rentalEndTime.ToString("yyyy-MM-dd HH:mm:ss"));
+                updateCmd.Parameters.AddWithValue("@distance", kilometersDriven);
+                updateCmd.Parameters.AddWithValue("@cost", cost);
+                updateCmd.Parameters.AddWithValue("@duration", rentalDuration);
                 updateCmd.Parameters.AddWithValue("@rentId", rentId);
 
                 updateCmd.ExecuteNonQuery();
-                Console.WriteLine($"Rent stopped.\nFinish Date: {finishDate}.\nDuration: {durationInMinutes} min. Price: {price} EUR.");
+                Console.WriteLine($"Rental ended.\nEnd Time: {rentalEndTime}.\nDuration: {rentalDuration} min. Total Cost: {cost} EUR.");
             }
         }
         
-        public void PrintTeslas()
+        public void ShowTeslas()
         {
-            using (var connection = new SqliteConnection(connectionString))
+            using (var connection = new SqliteConnection(_connectionString))
             {
                 connection.Open();
                 
                 var selectCmd = connection.CreateCommand();
-                selectCmd.CommandText = "SELECT * FROM Teslas";
+                selectCmd.CommandText = "SELECT * FROM Cars";
 
                 using (var reader = selectCmd.ExecuteReader())
                 {                
                     while(reader.Read())
                     {
-                        Console.WriteLine($"ID: {reader["ID"]}, model: {reader["Model"]}, price per hour: {reader["HourlyRate"]} EUR, price per kilometer: {reader["KilometerRate"]} EUR.");
+                        Console.WriteLine($"ID: {reader["ID"]}, Model: {reader["Model"]}, Hourly Rate: {reader["HourlyRate"]} EUR, Kilometer Rate: {reader["KilometerRate"]} EUR.");
                     }
                 }
             }
